@@ -1,8 +1,13 @@
 import { useContext, useState } from 'react';
 import { LoginContext } from 'context/loginContext';
 import { Link, useNavigate } from 'react-router';
-import { auth } from '../../firebase';
+import { getClientAuth } from '../../firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+
+type ToastState = {
+    message: string;
+    kind: 'error' | 'success';
+} | null;
 
 const LoginPage: React.FC = () => {
     const navigate = useNavigate();
@@ -11,10 +16,40 @@ const LoginPage: React.FC = () => {
     const [loginSuccess, setLoginSuccess] = useState<boolean | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
+    const [toast, setToast] = useState<ToastState>(null);
     const loginContext = useContext(LoginContext);
+
+    const showToast = (nextToast: Exclude<ToastState, null>) => {
+        setToast(nextToast);
+        window.setTimeout(() => setToast(null), 5000);
+    };
+
+    const getAuthErrorMessage = (error: unknown): string => {
+        const code = typeof error === 'object' && error !== null && 'code' in error
+            ? String((error as { code?: unknown }).code)
+            : undefined;
+
+        switch (code) {
+            case 'auth/invalid-api-key':
+                return 'Firebase API key is invalid. Check your VITE_FIREBASE_* values in .env and restart `pnpm dev`.';
+            case 'auth/invalid-credential':
+            case 'auth/wrong-password':
+            case 'auth/user-not-found':
+                return 'Invalid email or password.';
+            case 'auth/invalid-email':
+                return 'Please enter a valid email address.';
+            case 'auth/too-many-requests':
+                return 'Too many attempts. Try again later.';
+            case 'auth/network-request-failed':
+                return 'Network error. Check your connection and try again.';
+            default:
+                return 'Sign-in failed. Please try again.';
+        }
+    };
 
     const login = async (): Promise<boolean> => {
         try {
+            const auth = getClientAuth();
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
             console.log('User signed in:', userCredential.user);
 
@@ -24,6 +59,7 @@ const LoginPage: React.FC = () => {
             return true;
         } catch (error) {
             console.error('Error signing in:', error);
+            showToast({ kind: 'error', message: getAuthErrorMessage(error) });
             return false;
         }
     };
@@ -38,6 +74,7 @@ const LoginPage: React.FC = () => {
         if (Object.keys(nextErrors).length > 0) {
             setErrors(nextErrors);
             setLoginSuccess(false);
+            showToast({ kind: 'error', message: 'Please fix the highlighted fields.' });
             return;
         }
 
@@ -58,6 +95,30 @@ const LoginPage: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-white flex items-center justify-center p-4">
+            {toast ? (
+                <div className="fixed top-4 right-4 z-50">
+                    <div
+                        className={`max-w-sm rounded-lg border px-4 py-3 shadow-lg ${toast.kind === 'error'
+                            ? 'bg-red-50 border-red-200 text-red-800'
+                            : 'bg-green-50 border-green-200 text-green-800'
+                            }`}
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <div className="flex items-start gap-3">
+                            <p className="text-sm leading-5">{toast.message}</p>
+                            <button
+                                type="button"
+                                onClick={() => setToast(null)}
+                                className="ml-auto text-sm font-medium opacity-70 hover:opacity-100"
+                                aria-label="Dismiss notification"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             <div className="w-full max-w-md">
                 {/* Floating Island Card */}
                 <div className="bg-white rounded-2xl shadow-2xl p-8 transform transition-all hover:shadow-3xl">
